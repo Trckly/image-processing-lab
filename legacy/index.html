@@ -1,0 +1,738 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Кардіоритм-класифікатор</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&family=Unbounded:wght@500;700&display=swap">
+<style>
+/* Layout: ECG chart paper. Three workstations in order (Дані → Навчання → Розпізнавання), each a controls column + working area. */
+:root{
+  --paper:#fbf7f5; --panel:#ffffff; --ink:#2a2324; --muted:#76696a; --line:#ecdfdb;
+  --grid:#f3e0db; --grid-strong:#e8c3b9;
+  --accent:#c2352b; --on-accent:#ffffff;
+  --c0:#2f8a5f; --c1:#d0602a; --c2:#3a6cc4;
+  --font-display:"Unbounded","IBM Plex Sans",system-ui,sans-serif;
+  --font-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#181415; --panel:#211c1d; --ink:#f1e9e7; --muted:#a8999a; --line:#362c2d;
+    --grid:#271f20; --grid-strong:#3b2b2c;
+    --accent:#ff6b5e; --on-accent:#1b1112;
+    --c0:#4fc08a; --c1:#ff8f5e; --c2:#7ea6f2; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#181415; --panel:#211c1d; --ink:#f1e9e7; --muted:#a8999a; --line:#362c2d;
+  --grid:#271f20; --grid-strong:#3b2b2c;
+  --accent:#ff6b5e; --on-accent:#1b1112;
+  --c0:#4fc08a; --c1:#ff8f5e; --c2:#7ea6f2; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--font-body);font-size:14px;line-height:1.5;margin:0}
+.wrap{max-width:1240px;margin:0 auto;padding-inline:clamp(16px,3vw,32px);padding-block:0 56px}
+.masthead{
+  border-bottom:1px solid var(--grid-strong);
+  background-color:var(--paper);
+  background-image:
+    linear-gradient(var(--grid-strong) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grid-strong) 1px,transparent 1px),
+    linear-gradient(var(--grid) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:40px 40px,40px 40px,8px 8px,8px 8px;
+}
+.masthead .wrap{padding-block:32px 28px;display:grid;gap:10px}
+h1{font-family:var(--font-display);font-weight:700;font-size:clamp(22px,3.4vw,34px);line-height:1.15;margin:0;letter-spacing:-.01em;text-wrap:balance}
+.lede{max-width:68ch;margin:0;color:var(--ink)}
+.legend-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;border:1px solid var(--line);background:var(--panel);font-size:12.5px;white-space:nowrap}
+.dot{width:9px;height:9px;border-radius:50%;flex:none}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+
+.step{margin-top:36px;display:grid;gap:14px}
+.step-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.step-no{font-family:var(--font-mono);font-weight:600;font-size:12px;color:var(--accent);border:1.5px solid var(--accent);border-radius:6px;padding:1px 7px}
+h2{font-family:var(--font-display);font-weight:500;font-size:19px;margin:0}
+.step-head p{margin:0;color:var(--muted);flex-basis:100%}
+.layout{display:grid;grid-template-columns:300px minmax(0,1fr);gap:16px;align-items:start}
+.stack{display:grid;gap:16px;min-width:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;min-width:0}
+.panel h3{margin:0 0 10px;font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+@media (max-width:900px){.layout,.two{grid-template-columns:minmax(0,1fr)}}
+
+.field{display:grid;gap:4px;margin-bottom:12px}
+.field label,.lbl{font-size:12px;color:var(--muted)}
+.field .row{display:flex;align-items:center;gap:10px}
+.field output{font-family:var(--font-mono);font-size:12.5px;min-width:44px;text-align:right}
+input[type=range]{flex:1;accent-color:var(--accent);min-width:0}
+input[type=number],select{font:inherit;font-family:var(--font-mono);font-size:13px;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:4px 6px;min-width:0}
+input[type=number]{width:64px}
+input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ranges{display:grid;grid-template-columns:auto 1fr auto auto auto;gap:6px 8px;align-items:center;margin-bottom:14px}
+.ranges .dash{color:var(--muted)}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+button{font:inherit;font-size:13px;font-weight:500;cursor:pointer;border-radius:7px;padding:7px 12px;border:1px solid var(--line);background:var(--panel);color:var(--ink)}
+button:hover{border-color:var(--muted)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+button.primary:hover{filter:brightness(1.07)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.ghost{background:transparent}
+.small{font-size:12px;padding:4px 9px}
+
+canvas{display:block;width:100%}
+#dataPlot{height:260px}
+#lossPlot{height:240px}
+#ecg{height:150px;border-radius:6px}
+.plot-legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--muted);margin-top:8px}
+.plot-legend span{display:inline-flex;align-items:center;gap:6px}
+.swatch{width:16px;height:3px;border-radius:2px;display:inline-block}
+
+.counts{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:10px}
+.table-wrap{max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:5px 8px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{position:sticky;top:0;background:var(--panel);font-size:11.5px;font-weight:600;color:var(--muted);z-index:1}
+td.idx{color:var(--muted);font-family:var(--font-mono);font-size:12px;border-left:3px solid transparent}
+td input[type=number]{width:58px;padding:2px 4px}
+td select{padding:2px 4px;font-family:var(--font-body)}
+.split{font-family:var(--font-mono);font-size:11px;padding:2px 7px;border-radius:5px;border:1px solid var(--line);background:transparent;cursor:pointer}
+.split.test{border-color:var(--c2);color:var(--c2)}
+.del{border:none;background:transparent;color:var(--muted);font-size:16px;line-height:1;padding:2px 6px}
+.del:hover{color:var(--accent)}
+
+.status{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;margin-top:12px}
+.status b{font-family:var(--font-mono);font-weight:600}
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 9px;border-radius:999px;border:1px solid currentColor}
+.pill.idle{color:var(--muted)} .pill.run{color:var(--c1)} .pill.ok{color:var(--c0)} .pill.stale{color:var(--accent)}
+
+.cm{border-collapse:separate;border-spacing:3px;width:auto}
+.cm th,.cm td{border:none;text-align:center;padding:6px 8px;white-space:nowrap}
+.cm th{position:static;background:transparent}
+.cm td.cell{font-family:var(--font-mono);font-weight:600;border-radius:5px;min-width:48px}
+.cm .rowh{text-align:right}
+.metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+.metric{border-top:2px solid var(--line);padding-top:6px}
+.metric .v{font-family:var(--font-mono);font-size:18px;font-weight:600}
+.metric .k{font-size:12px;color:var(--muted)}
+
+.inputs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.inputs .f{display:grid;gap:4px;justify-items:start}
+.inputs input[type=number]{width:100%;font-size:16px;padding:6px}
+.inputs input[type=range]{width:100%}
+@media (max-width:480px){.inputs{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.verdict{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.verdict .name{font-family:var(--font-display);font-size:24px;font-weight:700}
+.verdict .conf{font-family:var(--font-mono);color:var(--muted)}
+.bars{display:grid;gap:8px}
+.bar{display:grid;grid-template-columns:110px minmax(0,1fr) 56px;gap:10px;align-items:center;font-size:13px}
+.bar .track{height:12px;background:var(--grid);border-radius:6px;overflow:hidden}
+.bar .fill{height:100%;border-radius:6px;transition:width .25s ease}
+.bar .pct{font-family:var(--font-mono);text-align:right;font-size:12.5px}
+.note{font-size:12.5px;color:var(--muted);margin:10px 0 0}
+.addrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
+#netSvg{width:100%;height:auto;display:block}
+.hint{font-size:12px;color:var(--muted)}
+footer{margin-top:40px;color:var(--muted);font-size:12.5px;max-width:80ch}
+@media (prefers-reduced-motion:reduce){.bar .fill{transition:none}}
+</style>
+</head>
+<body>
+<header class="masthead">
+  <div class="wrap">
+    <h1>Кардіоритм-класифікатор</h1>
+    <p class="lede">Кожен приклад — чотири послідовні виміри частоти серцевих скорочень (ЧСС, уд/хв). Нейромережа 4&nbsp;→&nbsp;N&nbsp;→&nbsp;3 вчиться на згенерованих послідовностях і розпізнає три класи ритму.</p>
+    <div class="legend-row" id="classLegend"></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- STEP 1: DATA -->
+  <section class="step" id="data">
+    <div class="step-head"><span class="step-no">1</span><h2>Дані</h2>
+      <p>Задайте діапазони ЧСС для кожного класу, згенеруйте вибірку, редагуйте значення в таблиці або видаляйте приклади.</p></div>
+    <div class="layout">
+      <div class="panel">
+        <h3>Генератор</h3>
+        <div class="lbl" style="margin-bottom:6px">Діапазони ЧСС, уд/хв</div>
+        <div class="ranges" id="ranges"></div>
+        <div class="field"><label for="perClass">Прикладів на клас</label>
+          <div class="row"><input type="range" id="perClass" min="5" max="200" step="5" value="40"><output id="perClassOut">40</output></div></div>
+        <div class="field"><label for="jitter">Коливання всередині послідовності, ± уд/хв</label>
+          <div class="row"><input type="range" id="jitter" min="0" max="15" step="1" value="4"><output id="jitterOut">4</output></div></div>
+        <div class="field"><label for="testShare">Частка тестової вибірки</label>
+          <div class="row"><input type="range" id="testShare" min="0" max="50" step="5" value="20"><output id="testShareOut">20%</output></div></div>
+        <div class="field"><label for="seed">Зерно генератора (для відтворюваності)</label>
+          <div class="row"><input type="number" id="seed" value="42" min="0" max="99999" style="width:90px"><button class="small ghost" id="seedRand" type="button">Випадкове</button></div></div>
+        <div class="btns"><button class="primary" id="genBtn" type="button">Згенерувати</button><button id="clearBtn" type="button">Очистити</button></div>
+      </div>
+      <div class="stack">
+        <div class="panel">
+          <div class="toolbar"><h3 style="margin:0">Послідовності</h3><div class="counts" id="counts"></div></div>
+          <canvas id="dataPlot" aria-label="Графік усіх послідовностей ЧСС"></canvas>
+          <div class="plot-legend" id="plotLegend"></div>
+        </div>
+        <div class="panel">
+          <div class="toolbar">
+            <h3 style="margin:0">Таблиця прикладів</h3>
+            <div class="btns">
+              <select id="filter" aria-label="Фільтр за класом"><option value="all">Усі класи</option></select>
+              <button class="small" id="addRowBtn" type="button">+ Додати рядок</button>
+            </div>
+          </div>
+          <div class="table-wrap"><table id="dataTable">
+            <thead><tr><th>#</th><th>ЧСС 1</th><th>ЧСС 2</th><th>ЧСС 3</th><th>ЧСС 4</th><th>Клас</th><th>Вибірка</th><th></th></tr></thead>
+            <tbody></tbody></table></div>
+          <p class="note">Клацніть на мітку «train/test», щоб перенести приклад між вибірками. Зміни в таблиці одразу видно на графіку.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 2: TRAINING -->
+  <section class="step" id="train">
+    <div class="step-head"><span class="step-no">2</span><h2>Навчання мережі</h2>
+      <p>Багатошаровий перцептрон: 4 входи (нормовані ЧСС) → прихований шар → 3 виходи softmax. Навчання — стохастичний градієнтний спуск, функція втрат — перехресна ентропія.</p></div>
+    <div class="layout">
+      <div class="panel">
+        <h3>Параметри</h3>
+        <div class="field"><label for="hidden">Нейронів у прихованому шарі</label>
+          <div class="row"><input type="range" id="hidden" min="2" max="16" step="1" value="6"><output id="hiddenOut">6</output></div></div>
+        <div class="field"><label for="act">Функція активації</label>
+          <select id="act"><option value="sigmoid">Сигмоїда</option><option value="tanh">Гіперболічний тангенс</option><option value="relu">ReLU</option></select></div>
+        <div class="field"><label for="lr">Швидкість навчання</label>
+          <div class="row"><input type="range" id="lr" min="0.005" max="1" step="0.005" value="0.1"><output id="lrOut">0.100</output></div></div>
+        <div class="field"><label for="epochs">Епох</label>
+          <div class="row"><input type="range" id="epochs" min="10" max="1000" step="10" value="200"><output id="epochsOut">200</output></div></div>
+        <div class="btns">
+          <button class="primary" id="trainBtn" type="button">Навчити</button>
+          <button id="stopBtn" type="button" disabled>Стоп</button>
+          <button id="resetBtn" type="button">Скинути ваги</button>
+        </div>
+        <div class="status" id="trainStatus"></div>
+      </div>
+      <div class="two">
+        <div class="panel">
+          <h3>Крива навчання</h3>
+          <canvas id="lossPlot" aria-label="Графік втрат і точності по епохах"></canvas>
+          <div class="plot-legend">
+            <span><i class="swatch" style="background:var(--accent)"></i>Втрати (ліва шкала)</span>
+            <span><i class="swatch" style="background:var(--c0)"></i>Точність train</span>
+            <span><i class="swatch" style="background:var(--c2)"></i>Точність test</span>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>Матриця помилок (тестова вибірка)</h3>
+          <div style="overflow-x:auto"><table class="cm" id="cm"></table></div>
+          <div class="metrics" id="metrics"></div>
+          <p class="note">N — норма, T — тахікардія, B — брадикардія. Діагональ — правильні відповіді.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 3: RECOGNITION -->
+  <section class="step" id="recognize">
+    <div class="step-head"><span class="step-no">3</span><h2>Розпізнавання</h2>
+      <p>Введіть чотири значення ЧСС або виберіть шаблон. Мережа відповідає одразу; поточну послідовність видно жирною лінією на графіку даних.</p></div>
+    <div class="layout">
+      <div class="panel">
+        <h3>Вхідна послідовність, уд/хв</h3>
+        <div class="inputs" id="inputs"></div>
+        <div class="lbl" style="margin-bottom:6px">Шаблони</div>
+        <div class="btns" id="presets"></div>
+        <div class="addrow">
+          <span class="lbl">Додати в дані як</span>
+          <select id="addAs" aria-label="Клас для нового прикладу"></select>
+          <button class="small" id="addAsBtn" type="button">Додати</button>
+        </div>
+        <p class="note" id="addMsg" hidden></p>
+      </div>
+      <div class="stack">
+        <div class="two">
+          <div class="panel">
+            <h3>Відповідь мережі</h3>
+            <div class="verdict" id="verdict"></div>
+            <div class="bars" id="bars"></div>
+            <p class="note" id="ruleNote"></p>
+          </div>
+          <div class="panel">
+            <h3>Стан мережі для цього входу</h3>
+            <svg id="netSvg" viewBox="0 0 380 250" role="img" aria-label="Схема нейромережі з вагами"></svg>
+            <p class="hint">Колір зв'язку: <span style="color:var(--accent)">червоний</span> — додатна вага, <span style="color:var(--c2)">синій</span> — від'ємна; товщина — модуль ваги. Заливка вузла — рівень активації.</p>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>Синтезована ЕКГ для цієї послідовності (II відведення, 25 мм/с умовно)</h3>
+          <canvas id="ecg" aria-label="Синтезована ЕКГ"></canvas>
+          <p class="note">Інтервали R–R обчислено як 60 / ЧСС; чотири значення повторюються циклічно у вікні 6 с.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>Навчальна модель. Дані синтетичні, класифікація не є медичним висновком. Межі класів за замовчуванням: брадикардія &lt; 60, норма 60–100, тахікардія &gt; 100 уд/хв.</footer>
+</main>
+
+<script>
+(() => {
+"use strict";
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+const CLASSES = [
+  { name: "Норма",       short: "N", color: "--c0" },
+  { name: "Тахікардія",  short: "T", color: "--c1" },
+  { name: "Брадикардія", short: "B", color: "--c2" },
+];
+const BPM_MIN = 30, BPM_MAX = 200;
+
+const S = {
+  ranges: [[60, 100], [101, 180], [35, 59]],
+  data: [], nextId: 1,
+  net: null, hist: [], training: false, targetEpochs: 0, stale: false,
+  input: [72, 75, 70, 74],
+};
+
+/* ---------- random ---------- */
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function gaussFrom(rng) { return () => { let u = 0, v = 0; while (u === 0) u = rng(); v = rng(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }; }
+function shuffle(a, rng) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+function makeSeq(c, jitter, rng, g) {
+  const [lo, hi] = S.ranges[c];
+  const base = lo + rng() * (hi - lo);
+  return [0, 1, 2, 3].map(() => clamp(Math.round(base + g() * jitter), lo, hi));
+}
+
+/* ---------- data ---------- */
+function generate() {
+  const seed = parseInt($("seed").value, 10) || 0;
+  const rng = mulberry32(seed), g = gaussFrom(rng);
+  const per = +$("perClass").value, jitter = +$("jitter").value, share = +$("testShare").value / 100;
+  const out = [];
+  for (let c = 0; c < 3; c++) {
+    const arr = [];
+    for (let i = 0; i < per; i++) arr.push({ id: 0, x: makeSeq(c, jitter, rng, g), y: c, split: "train" });
+    shuffle(arr, rng);
+    const nTest = Math.round(per * share);
+    for (let i = 0; i < nTest; i++) arr[i].split = "test";
+    out.push(...arr);
+  }
+  shuffle(out, rng);
+  S.nextId = 1; out.forEach(r => r.id = S.nextId++);
+  S.data = out;
+  dataChanged(true);
+}
+
+/* ---------- network ---------- */
+const norm = v => (v - 100) / 40;
+const ACT = {
+  sigmoid: { f: z => 1 / (1 + Math.exp(-z)), d: (z, h) => h * (1 - h) },
+  tanh:    { f: z => Math.tanh(z),           d: (z, h) => 1 - h * h },
+  relu:    { f: z => z > 0 ? z : 0,          d: (z) => z > 0 ? 1 : 0 },
+};
+class MLP {
+  constructor(nIn, nH, nOut, act, seed) {
+    const rng = mulberry32(seed), g = gaussFrom(rng);
+    this.nIn = nIn; this.nH = nH; this.nOut = nOut; this.act = act;
+    const s1 = Math.sqrt(2 / (nIn + nH)), s2 = Math.sqrt(2 / (nH + nOut));
+    this.W1 = Array.from({ length: nH }, () => Array.from({ length: nIn }, () => g() * s1));
+    this.b1 = new Array(nH).fill(0);
+    this.W2 = Array.from({ length: nOut }, () => Array.from({ length: nH }, () => g() * s2));
+    this.b2 = new Array(nOut).fill(0);
+  }
+  forward(xr) {
+    const x = xr.map(norm), A = ACT[this.act];
+    const z1 = this.W1.map((w, j) => w.reduce((s, wi, i) => s + wi * x[i], this.b1[j]));
+    const h = z1.map(A.f);
+    const z2 = this.W2.map((w, k) => w.reduce((s, wj, j) => s + wj * h[j], this.b2[k]));
+    const m = Math.max(...z2), e = z2.map(z => Math.exp(z - m)), se = e.reduce((a, b) => a + b, 0);
+    return { x, z1, h, p: e.map(v => v / se) };
+  }
+  step(xr, y, lr) {
+    const { x, z1, h, p } = this.forward(xr), A = ACT[this.act];
+    const dz2 = p.map((pk, k) => pk - (k === y ? 1 : 0));
+    const dh = h.map((_, j) => dz2.reduce((s, d, k) => s + d * this.W2[k][j], 0));
+    const dz1 = dh.map((d, j) => d * A.d(z1[j], h[j]));
+    for (let k = 0; k < this.nOut; k++) { for (let j = 0; j < this.nH; j++) this.W2[k][j] -= lr * dz2[k] * h[j]; this.b2[k] -= lr * dz2[k]; }
+    for (let j = 0; j < this.nH; j++) { for (let i = 0; i < this.nIn; i++) this.W1[j][i] -= lr * dz1[j] * x[i]; this.b1[j] -= lr * dz1[j]; }
+    return -Math.log(Math.max(p[y], 1e-12));
+  }
+  predict(xr) { const p = this.forward(xr).p; return { p, k: p.indexOf(Math.max(...p)) }; }
+}
+
+function evaluate(rows) {
+  const cm = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  if (!S.net || !rows.length) return { acc: null, loss: null, cm };
+  let ok = 0, loss = 0;
+  for (const r of rows) { const { p, k } = S.net.predict(r.x); cm[r.y][k]++; if (k === r.y) ok++; loss += -Math.log(Math.max(p[r.y], 1e-12)); }
+  return { acc: ok / rows.length, loss: loss / rows.length, cm };
+}
+const trainRows = () => S.data.filter(r => r.split === "train");
+const testRows = () => S.data.filter(r => r.split === "test");
+
+function newNet() {
+  S.net = new MLP(4, +$("hidden").value, 3, $("act").value, (parseInt($("seed").value, 10) || 0) + 7);
+  S.hist = []; S.stale = false;
+}
+
+let rafId = 0, epochsDone = 0, shuffleRng = Math.random;
+function startTraining() {
+  const tr = trainRows();
+  if (!tr.length) { setStatusMsg("Немає прикладів у навчальній вибірці. Згенеруйте дані на кроці 1."); return; }
+  newNet();
+  S.training = true; S.targetEpochs = +$("epochs").value; epochsDone = 0;
+  shuffleRng = mulberry32((parseInt($("seed").value, 10) || 0) + 13);
+  syncTrainButtons();
+  const perFrame = Math.max(1, Math.ceil(S.targetEpochs / 120));
+  const lr = +$("lr").value;
+  const tick = () => {
+    if (!S.training) return;
+    const rows = trainRows();
+    for (let e = 0; e < perFrame && epochsDone < S.targetEpochs; e++) {
+      const order = shuffle(rows.slice(), shuffleRng);
+      let loss = 0;
+      for (const r of order) loss += S.net.step(r.x, r.y, lr);
+      epochsDone++;
+      const tr = evaluate(rows), te = evaluate(testRows());
+      S.hist.push({ loss: loss / rows.length, trainAcc: tr.acc, testAcc: te.acc });
+    }
+    renderTraining(); renderPredict();
+    if (epochsDone >= S.targetEpochs) { S.training = false; syncTrainButtons(); renderTraining(); return; }
+    rafId = requestAnimationFrame(tick);
+  };
+  rafId = requestAnimationFrame(tick);
+}
+function stopTraining() { S.training = false; cancelAnimationFrame(rafId); syncTrainButtons(); renderTraining(); }
+function syncTrainButtons() { $("trainBtn").disabled = S.training; $("stopBtn").disabled = !S.training; $("genBtn").disabled = S.training; }
+
+/* ---------- canvas helpers ---------- */
+function prep(cv) {
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  return { ctx, w, h };
+}
+const monoFont = px => `${px}px ${css("--font-mono")}`;
+
+/* ---------- render: data ---------- */
+function drawDataPlot() {
+  const { ctx, w, h } = prep($("dataPlot"));
+  const L = 44, R = 30, T = 10, B = 30, pw = w - L - R, ph = h - T - B;
+  const yv = v => T + ph * (1 - (v - BPM_MIN) / (BPM_MAX - BPM_MIN));
+  const xv = i => L + pw * (i / 3);
+  // class bands
+  S.ranges.forEach(([lo, hi], c) => { ctx.globalAlpha = .09; ctx.fillStyle = css(CLASSES[c].color); ctx.fillRect(L, yv(hi + .5), pw, yv(lo - .5) - yv(hi + .5)); });
+  ctx.globalAlpha = 1;
+  // grid
+  ctx.strokeStyle = css("--line"); ctx.lineWidth = 1; ctx.fillStyle = css("--muted"); ctx.font = monoFont(10.5);
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (let v = 40; v <= 200; v += 20) { const y = Math.round(yv(v)) + .5; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(L + pw, y); ctx.stroke(); ctx.fillText(v, L - 6, y); }
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (let i = 0; i < 4; i++) { const x = Math.round(xv(i)) + .5; ctx.beginPath(); ctx.moveTo(x, T); ctx.lineTo(x, T + ph); ctx.stroke(); ctx.fillText("вимір " + (i + 1), x, T + ph + 8); }
+  // sequences
+  const n = S.data.length, alpha = n > 300 ? .18 : n > 120 ? .28 : .45;
+  ctx.lineWidth = 1.2; ctx.lineJoin = "round";
+  for (const r of S.data) {
+    ctx.globalAlpha = alpha; ctx.strokeStyle = css(CLASSES[r.y].color);
+    ctx.setLineDash(r.split === "test" ? [3, 3] : []);
+    ctx.beginPath(); r.x.forEach((v, i) => i ? ctx.lineTo(xv(i), yv(v)) : ctx.moveTo(xv(i), yv(v))); ctx.stroke();
+  }
+  ctx.setLineDash([]); ctx.globalAlpha = 1;
+  // current input
+  ctx.strokeStyle = css("--ink"); ctx.lineWidth = 2.6;
+  ctx.beginPath(); S.input.forEach((v, i) => i ? ctx.lineTo(xv(i), yv(v)) : ctx.moveTo(xv(i), yv(v))); ctx.stroke();
+  ctx.fillStyle = css("--panel");
+  S.input.forEach((v, i) => { ctx.beginPath(); ctx.arc(xv(i), yv(v), 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); });
+  // axis title
+  ctx.save(); ctx.translate(11, T + ph / 2); ctx.rotate(-Math.PI / 2); ctx.fillStyle = css("--muted"); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.font = monoFont(10.5); ctx.fillText("уд/хв", 0, 0); ctx.restore();
+}
+
+function renderCounts() {
+  const c = [0, 0, 0], te = S.data.filter(r => r.split === "test").length;
+  S.data.forEach(r => c[r.y]++);
+  $("counts").innerHTML = CLASSES.map((k, i) => `<span class="chip"><i class="dot" style="background:var(${k.color})"></i>${k.name} <b class="mono">${c[i]}</b></span>`).join("")
+    + `<span class="chip mono">train ${S.data.length - te} · test ${te}</span>`;
+}
+
+function renderTable() {
+  const f = $("filter").value;
+  const rows = S.data.filter(r => f === "all" || r.y === +f);
+  const opts = y => CLASSES.map((k, i) => `<option value="${i}"${i === y ? " selected" : ""}>${k.name}</option>`).join("");
+  $("dataTable").tBodies[0].innerHTML = rows.length ? rows.map(r => `<tr data-id="${r.id}">
+    <td class="idx" style="border-left-color:var(${CLASSES[r.y].color})">${r.id}</td>
+    ${r.x.map((v, i) => `<td><input type="number" min="${BPM_MIN}" max="${BPM_MAX}" value="${v}" data-i="${i}" aria-label="ЧСС ${i + 1}, приклад ${r.id}"></td>`).join("")}
+    <td><select data-k="y" aria-label="Клас прикладу ${r.id}">${opts(r.y)}</select></td>
+    <td><button type="button" class="split ${r.split}" data-k="split">${r.split}</button></td>
+    <td><button type="button" class="del" data-k="del" aria-label="Видалити приклад ${r.id}">×</button></td></tr>`).join("")
+    : `<tr><td colspan="8" style="padding:18px;color:var(--muted);white-space:normal">Даних немає. Натисніть «Згенерувати» або додайте рядок вручну.</td></tr>`;
+}
+
+function dataChanged(full) {
+  if (S.net && !S.training) S.stale = true;
+  if (full) renderTable();
+  renderCounts(); drawDataPlot(); renderTraining(); renderPredict();
+}
+
+/* ---------- render: training ---------- */
+function setStatusMsg(msg) { $("trainStatus").innerHTML = `<span class="pill stale">${msg}</span>`; }
+function fmtPct(v) { return v == null ? "—" : (v * 100).toFixed(1) + "%"; }
+
+function renderTraining() {
+  // status
+  const last = S.hist[S.hist.length - 1];
+  let pill;
+  if (S.training) pill = `<span class="pill run">навчається…</span>`;
+  else if (!S.net) pill = `<span class="pill idle">не навчена</span>`;
+  else if (S.stale) pill = `<span class="pill stale">дані змінено — перенавчіть</span>`;
+  else pill = `<span class="pill ok">навчена</span>`;
+  const te = evaluate(testRows()), tr = evaluate(trainRows());
+  $("trainStatus").innerHTML = pill +
+    `<span>Епоха <b>${S.hist.length}${S.training ? " / " + S.targetEpochs : ""}</b></span>` +
+    `<span>Втрати <b>${last ? last.loss.toFixed(4) : "—"}</b></span>`;
+  // loss chart
+  drawLoss();
+  // confusion matrix
+  const cm = te.cm, max = Math.max(1, ...cm.flat());
+  const head = `<tr><th></th><th colspan="3" class="lbl">Прогноз мережі →</th></tr><tr><th class="lbl rowh">Справжній ↓</th>${CLASSES.map(k => `<th title="${k.name}"><i class="dot" style="background:var(${k.color});display:inline-block;margin-right:5px"></i>${k.short}</th>`).join("")}</tr>`;
+  const body = cm.map((row, i) => `<tr><th class="rowh">${CLASSES[i].name}</th>${row.map((v, j) => {
+    const a = v / max, col = i === j ? CLASSES[i].color : "--accent";
+    return `<td class="cell" style="background:color-mix(in srgb, var(${col}) ${Math.round(a * 70 + (v ? 8 : 0))}%, transparent);color:${a > .55 ? "var(--panel)" : "var(--ink)"}">${S.net ? v : "—"}</td>`;
+  }).join("")}</tr>`).join("");
+  $("cm").innerHTML = head + body;
+  const recall = cm.map((r, i) => { const s = r.reduce((a, b) => a + b, 0); return s ? r[i] / s : null; });
+  $("metrics").innerHTML =
+    `<div class="metric"><div class="v">${fmtPct(te.acc)}</div><div class="k">Точність на test (${testRows().length})</div></div>` +
+    `<div class="metric"><div class="v">${fmtPct(tr.acc)}</div><div class="k">Точність на train (${trainRows().length})</div></div>` +
+    `<div class="metric"><div class="v" style="font-size:13px;line-height:1.6">${CLASSES.map((k, i) => `${k.short}: ${S.net ? fmtPct(recall[i]) : "—"}`).join("<br>")}</div><div class="k">Повнота за класами</div></div>`;
+}
+
+function drawLoss() {
+  const { ctx, w, h } = prep($("lossPlot"));
+  const L = 46, R = 42, T = 10, B = 28, pw = w - L - R, ph = h - T - B;
+  const H = S.hist, N = Math.max(S.training ? S.targetEpochs : H.length, 10);
+  const maxLoss = Math.max(0.1, ...H.map(e => e.loss)) * 1.05;
+  const xv = i => L + pw * (i / (N - 1 || 1));
+  const yl = v => T + ph * (1 - v / maxLoss), ya = v => T + ph * (1 - v);
+  ctx.strokeStyle = css("--line"); ctx.lineWidth = 1; ctx.font = monoFont(10.5); ctx.fillStyle = css("--muted");
+  for (let k = 0; k <= 4; k++) {
+    const y = Math.round(T + ph * k / 4) + .5; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(L + pw, y); ctx.stroke();
+    ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillText((maxLoss * (1 - k / 4)).toFixed(2), L - 6, y);
+    ctx.textAlign = "left"; ctx.fillText(Math.round(100 * (1 - k / 4)) + "%", L + pw + 6, y);
+  }
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  const ticks = 5; for (let k = 0; k <= ticks; k++) { const ep = Math.round(1 + (N - 1) * k / ticks); ctx.fillText(ep, xv(ep - 1), T + ph + 8); }
+  if (!H.length) { ctx.fillText("Натисніть «Навчити», щоб побачити криву", L + pw / 2, T + ph / 2 - 8); return; }
+  const line = (key, scale, col, dash) => {
+    ctx.strokeStyle = css(col); ctx.lineWidth = 2; ctx.setLineDash(dash || []); ctx.beginPath();
+    let started = false;
+    H.forEach((e, i) => { if (e[key] == null) return; const x = xv(i), y = scale(e[key]); started ? ctx.lineTo(x, y) : (ctx.moveTo(x, y), started = true); });
+    ctx.stroke(); ctx.setLineDash([]);
+    const lastE = H[H.length - 1]; if (lastE[key] != null) { ctx.fillStyle = css(col); ctx.beginPath(); ctx.arc(xv(H.length - 1), scale(lastE[key]), 3.5, 0, Math.PI * 2); ctx.fill(); }
+  };
+  line("trainAcc", ya, "--c0"); line("testAcc", ya, "--c2", [5, 3]); line("loss", yl, "--accent");
+}
+
+/* ---------- render: recognition ---------- */
+function expectedByRanges(seq) {
+  const m = seq.reduce((a, b) => a + b, 0) / 4;
+  const c = S.ranges.findIndex(([lo, hi]) => m >= lo - .5 && m <= hi + .5);
+  return { mean: m, c };
+}
+function renderPredict() {
+  const seq = S.input;
+  const exp = expectedByRanges(seq);
+  if (!S.net || !S.hist.length) {
+    $("verdict").innerHTML = `<span class="name" style="color:var(--muted)">—</span><span class="conf">мережа ще не навчена (крок 2)</span>`;
+    $("bars").innerHTML = CLASSES.map(k => barHtml(k, 0)).join("");
+  } else {
+    const { p, k } = S.net.predict(seq);
+    $("verdict").innerHTML = `<span class="name" style="color:var(${CLASSES[k].color})">${CLASSES[k].name}</span><span class="conf">впевненість ${(p[k] * 100).toFixed(1)}%</span>`;
+    $("bars").innerHTML = CLASSES.map((c, i) => barHtml(c, p[i])).join("");
+    if ($("addAs").dataset.touched !== "1") $("addAs").value = String(k);
+  }
+  $("ruleNote").innerHTML = `Середня ЧСС <b class="mono">${exp.mean.toFixed(1)}</b> уд/хв. За заданими діапазонами це ${exp.c >= 0 ? `<b>${CLASSES[exp.c].name.toLowerCase()}</b>` : "<b>поза всіма діапазонами</b>"}.`;
+  drawNet(); drawECG(); drawDataPlot();
+}
+function barHtml(k, p) {
+  return `<div class="bar"><span><i class="dot" style="background:var(${k.color});display:inline-block;margin-right:6px"></i>${k.name}</span><div class="track"><div class="fill" style="width:${(p * 100).toFixed(1)}%;background:var(${k.color})"></div></div><span class="pct">${(p * 100).toFixed(1)}%</span></div>`;
+}
+
+function drawNet() {
+  const svg = $("netSvg"), W = 380, H = 250;
+  const net = S.net, nH = net ? net.nH : +$("hidden").value;
+  const colX = [44, 190, 300];
+  const ys = n => Array.from({ length: n }, (_, i) => n === 1 ? H / 2 : 22 + (H - 44) * i / (n - 1));
+  const yIn = ys(4), yH = ys(nH), yOut = ys(3).map(y => 60 + (y - 22) * (130 / 206));
+  const fw = net ? net.forward(S.input) : null;
+  let maxW = 0.001; if (net) { net.W1.flat().concat(net.W2.flat()).forEach(v => maxW = Math.max(maxW, Math.abs(v))); }
+  let s = "";
+  const edge = (x1, y1, x2, y2, wv) => {
+    const a = Math.abs(wv) / maxW;
+    s += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" style="stroke:var(${wv >= 0 ? "--accent" : "--c2"})" stroke-width="${(0.4 + a * 2.6).toFixed(2)}" stroke-opacity="${(0.12 + a * 0.75).toFixed(2)}"/>`;
+  };
+  if (net) {
+    for (let j = 0; j < nH; j++) for (let i = 0; i < 4; i++) edge(colX[0], yIn[i], colX[1], yH[j], net.W1[j][i]);
+    for (let k = 0; k < 3; k++) for (let j = 0; j < nH; j++) edge(colX[1], yH[j], colX[2], yOut[k], net.W2[k][j]);
+  } else {
+    for (let j = 0; j < nH; j++) for (let i = 0; i < 4; i++) s += `<line x1="${colX[0]}" y1="${yIn[i]}" x2="${colX[1]}" y2="${yH[j]}" style="stroke:var(--line)"/>`;
+    for (let k = 0; k < 3; k++) for (let j = 0; j < nH; j++) s += `<line x1="${colX[1]}" y1="${yH[j]}" x2="${colX[2]}" y2="${yOut[k]}" style="stroke:var(--line)"/>`;
+  }
+  const node = (x, y, r, fillVar, op, label, anchor, lx) => {
+    s += `<circle cx="${x}" cy="${y}" r="${r}" style="fill:var(--panel);stroke:var(--ink)" stroke-width="1.2"/>`;
+    s += `<circle cx="${x}" cy="${y}" r="${r}" style="fill:var(${fillVar})" fill-opacity="${op.toFixed(2)}"/>`;
+    if (label) s += `<text x="${lx}" y="${y + 4}" text-anchor="${anchor}" style="fill:var(--ink);font:11px var(--font-mono)">${label}</text>`;
+  };
+  yIn.forEach((y, i) => node(colX[0], y, 9, "--ink", fw ? clamp((fw.x[i] + 2) / 4, 0, 1) * .6 : 0, String(S.input[i]), "end", colX[0] - 14));
+  const act = $("act").value;
+  yH.forEach((y, j) => { let a = 0; if (fw) { const hv = fw.h[j]; a = act === "tanh" ? (hv + 1) / 2 : act === "relu" ? clamp(hv / 3, 0, 1) : hv; } node(colX[1], y, nH > 10 ? 6 : 8, "--ink", a * .7, "", "", 0); });
+  yOut.forEach((y, k) => node(colX[2], y, 11, CLASSES[k].color, fw ? fw.p[k] : 0, `${CLASSES[k].short} ${fw ? (fw.p[k] * 100).toFixed(0) + "%" : ""}`, "start", colX[2] + 17));
+  s += `<text x="${colX[0]}" y="${H - 2}" text-anchor="middle" style="fill:var(--muted);font:10px var(--font-body)">входи</text>`;
+  s += `<text x="${colX[1]}" y="${H - 2}" text-anchor="middle" style="fill:var(--muted);font:10px var(--font-body)">прихований (${nH})</text>`;
+  s += `<text x="${colX[2]}" y="${H - 2}" text-anchor="middle" style="fill:var(--muted);font:10px var(--font-body)">виходи</text>`;
+  svg.innerHTML = s;
+}
+
+function pqrst(dt, rr) {
+  const g = (mu, a, w) => a * Math.exp(-((dt - mu) ** 2) / (2 * w * w));
+  const qt = 0.27 * Math.sqrt(rr);
+  return g(-0.16, 0.12, 0.024) + g(-0.035, -0.12, 0.009) + g(0, 1, 0.011) + g(0.035, -0.24, 0.011) + g(qt, 0.27, 0.045);
+}
+function drawECG() {
+  const cv = $("ecg"), { ctx, w, h } = prep(cv);
+  const win = 6, pps = w / win;
+  ctx.fillStyle = css("--paper"); ctx.fillRect(0, 0, w, h);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = css("--grid");
+  for (let t = 0; t <= win; t += 0.04) { const x = Math.round(t * pps) + .5; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+  const sq = 0.04 * pps; for (let y = h; y >= 0; y -= sq) { ctx.beginPath(); ctx.moveTo(0, Math.round(y) + .5); ctx.lineTo(w, Math.round(y) + .5); ctx.stroke(); }
+  ctx.strokeStyle = css("--grid-strong");
+  for (let t = 0; t <= win; t += 0.2) { const x = Math.round(t * pps) + .5; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+  for (let y = h; y >= 0; y -= sq * 5) { ctx.beginPath(); ctx.moveTo(0, Math.round(y) + .5); ctx.lineTo(w, Math.round(y) + .5); ctx.stroke(); }
+  const beats = []; let t = 0.35, i = 0;
+  while (t < win + 0.5 && i < 200) { const bpm = clamp(S.input[i % 4], BPM_MIN, BPM_MAX); beats.push({ t, rr: 60 / bpm, bpm, k: i % 4 }); t += 60 / bpm; i++; }
+  const base = h * 0.66, amp = h * 0.5;
+  ctx.strokeStyle = css("--accent"); ctx.lineWidth = 1.6; ctx.lineJoin = "round"; ctx.beginPath();
+  for (let px = 0; px <= w; px++) {
+    const tt = px / pps; let v = 0;
+    for (const b of beats) { const d = tt - b.t; if (d > -0.4 && d < 0.8) v += pqrst(d, b.rr); }
+    const y = base - v * amp; px ? ctx.lineTo(px, y) : ctx.moveTo(px, y);
+  }
+  ctx.stroke();
+  ctx.fillStyle = css("--ink"); ctx.font = monoFont(10.5); ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (const b of beats) { const x = b.t * pps; if (x > 10 && x < w - 10) ctx.fillText(b.bpm, x, 4); }
+  ctx.fillStyle = css("--muted"); ctx.textAlign = "left"; ctx.textBaseline = "bottom"; ctx.fillText("1 с", 6, h - 4);
+  ctx.strokeStyle = css("--muted"); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(28, h - 9); ctx.lineTo(28 + pps, h - 9); ctx.stroke();
+}
+
+/* ---------- UI wiring ---------- */
+function buildStatic() {
+  $("classLegend").innerHTML = CLASSES.map((k, i) => `<span class="chip" id="legend${i}"><i class="dot" style="background:var(${k.color})"></i>${k.name}</span>`).join("");
+  $("filter").innerHTML += CLASSES.map((k, i) => `<option value="${i}">${k.name}</option>`).join("");
+  $("addAs").innerHTML = CLASSES.map((k, i) => `<option value="${i}">${k.name}</option>`).join("");
+  $("plotLegend").innerHTML = CLASSES.map(k => `<span><i class="swatch" style="background:var(${k.color})"></i>${k.name}</span>`).join("") +
+    `<span><i class="swatch" style="background:var(--muted);height:1px;border-top:2px dashed var(--muted);background:none"></i>тестові приклади</span>` +
+    `<span><i class="swatch" style="background:var(--ink);height:4px"></i>поточний вхід (крок 3)</span>`;
+  renderRanges();
+  $("inputs").innerHTML = [0, 1, 2, 3].map(i => `<div class="f"><label class="lbl" for="in${i}">Вимір ${i + 1}</label>
+    <input type="number" id="in${i}" min="${BPM_MIN}" max="${BPM_MAX}" value="${S.input[i]}">
+    <input type="range" id="sl${i}" min="${BPM_MIN}" max="${BPM_MAX}" value="${S.input[i]}" aria-label="Вимір ${i + 1}, повзунок"></div>`).join("");
+  const presets = [["Норма", 0], ["Тахікардія", 1], ["Брадикардія", 2], ["Випадкова", -1], ["Межова 100", -2], ["Нерегулярна", -3]];
+  $("presets").innerHTML = presets.map(([n, c]) => `<button type="button" class="small" data-p="${c}">${n}</button>`).join("");
+}
+function legendText() { CLASSES.forEach((k, i) => { const [lo, hi] = S.ranges[i]; $("legend" + i).innerHTML = `<i class="dot" style="background:var(${k.color})"></i>${k.name} <span class="mono">${lo}–${hi}</span>`; }); }
+function renderRanges() {
+  $("ranges").innerHTML = CLASSES.map((k, i) => `<i class="dot" style="background:var(${k.color})"></i><span>${k.name}</span>
+    <input type="number" data-r="${i}" data-e="0" min="${BPM_MIN}" max="${BPM_MAX}" value="${S.ranges[i][0]}" aria-label="${k.name}: мінімум">
+    <span class="dash">–</span>
+    <input type="number" data-r="${i}" data-e="1" min="${BPM_MIN}" max="${BPM_MAX}" value="${S.ranges[i][1]}" aria-label="${k.name}: максимум">`).join("");
+  legendText();
+}
+function setInput(seq) {
+  S.input = seq.map(v => clamp(Math.round(v), BPM_MIN, BPM_MAX));
+  S.input.forEach((v, i) => { $("in" + i).value = v; $("sl" + i).value = v; });
+  $("addAs").dataset.touched = "0";
+  renderPredict();
+}
+
+function wire() {
+  const bindOut = (id, fmt) => { const el = $(id), out = $(id + "Out"); const f = () => out.textContent = fmt(el.value); el.addEventListener("input", f); f(); };
+  bindOut("perClass", v => v); bindOut("jitter", v => v); bindOut("testShare", v => v + "%");
+  bindOut("hidden", v => v); bindOut("lr", v => (+v).toFixed(3)); bindOut("epochs", v => v);
+  $("hidden").addEventListener("input", () => { if (!S.training) { S.net = null; S.hist = []; S.stale = false; renderTraining(); renderPredict(); } });
+  $("act").addEventListener("change", () => { if (!S.training) { S.net = null; S.hist = []; S.stale = false; renderTraining(); renderPredict(); } });
+
+  $("ranges").addEventListener("change", e => {
+    const t = e.target; if (!t.dataset.r) return;
+    const c = +t.dataset.r, end = +t.dataset.e;
+    let v = clamp(parseInt(t.value, 10) || BPM_MIN, BPM_MIN, BPM_MAX);
+    const r = S.ranges[c]; r[end] = v; if (r[0] > r[1]) { r[1 - end] = v; }
+    renderRanges(); drawDataPlot(); renderPredict();
+  });
+  $("seedRand").addEventListener("click", () => { $("seed").value = Math.floor(Math.random() * 99999); });
+  $("genBtn").addEventListener("click", generate);
+  $("clearBtn").addEventListener("click", () => { S.data = []; dataChanged(true); });
+  $("filter").addEventListener("change", renderTable);
+  $("addRowBtn").addEventListener("click", () => {
+    const y = $("filter").value === "all" ? expectedByRanges(S.input).c : +$("filter").value;
+    S.data.unshift({ id: S.nextId++, x: S.input.slice(), y: y >= 0 ? y : 0, split: "train" });
+    dataChanged(true); $("dataTable").parentElement.scrollTop = 0;
+  });
+  const tbody = $("dataTable").tBodies[0];
+  tbody.addEventListener("change", e => {
+    const tr = e.target.closest("tr"); if (!tr) return;
+    const r = S.data.find(d => d.id === +tr.dataset.id); if (!r) return;
+    if (e.target.dataset.i != null) { const v = clamp(parseInt(e.target.value, 10) || BPM_MIN, BPM_MIN, BPM_MAX); r.x[+e.target.dataset.i] = v; e.target.value = v; dataChanged(false); }
+    else if (e.target.dataset.k === "y") { r.y = +e.target.value; tr.cells[0].style.borderLeftColor = `var(${CLASSES[r.y].color})`; dataChanged($("filter").value !== "all"); }
+  });
+  tbody.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    const tr = b.closest("tr"), idx = S.data.findIndex(d => d.id === +tr.dataset.id); if (idx < 0) return;
+    if (b.dataset.k === "del") { S.data.splice(idx, 1); tr.remove(); if (!S.data.length) renderTable(); dataChanged(false); }
+    else if (b.dataset.k === "split") { const r = S.data[idx]; r.split = r.split === "train" ? "test" : "train"; b.textContent = r.split; b.className = "split " + r.split; dataChanged(false); }
+  });
+
+  $("trainBtn").addEventListener("click", startTraining);
+  $("stopBtn").addEventListener("click", stopTraining);
+  $("resetBtn").addEventListener("click", () => { stopTraining(); S.net = null; S.hist = []; S.stale = false; renderTraining(); renderPredict(); });
+
+  for (let i = 0; i < 4; i++) {
+    $("in" + i).addEventListener("input", e => { const v = parseInt(e.target.value, 10); if (isNaN(v)) return; S.input[i] = clamp(v, BPM_MIN, BPM_MAX); $("sl" + i).value = S.input[i]; renderPredict(); });
+    $("in" + i).addEventListener("change", e => { e.target.value = S.input[i]; });
+    $("sl" + i).addEventListener("input", e => { S.input[i] = +e.target.value; $("in" + i).value = S.input[i]; renderPredict(); });
+  }
+  $("presets").addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    const c = +b.dataset.p, rng = Math.random, g = gaussFrom(rng), j = +$("jitter").value || 3;
+    if (c >= 0) setInput(makeSeq(c, j, rng, g));
+    else if (c === -1) setInput([0, 1, 2, 3].map(() => BPM_MIN + rng() * (BPM_MAX - BPM_MIN)));
+    else if (c === -2) setInput([98, 103, 99, 102]);
+    else setInput([62, 128, 70, 140]);
+  });
+  $("addAs").addEventListener("change", () => $("addAs").dataset.touched = "1");
+  $("addAsBtn").addEventListener("click", () => {
+    const y = +$("addAs").value;
+    S.data.unshift({ id: S.nextId++, x: S.input.slice(), y, split: "train" });
+    dataChanged(true);
+    const m = $("addMsg"); m.hidden = false; m.textContent = `Додано приклад #${S.nextId - 1} [${S.input.join(", ")}] як «${CLASSES[y].name}» у train. Перенавчіть мережу, щоб врахувати його.`;
+  });
+
+  let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(redrawAll, 120); });
+  try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => setTimeout(redrawAll, 30)); } catch (e) {}
+  new MutationObserver(() => setTimeout(redrawAll, 30)).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "class"] });
+}
+function redrawAll() { drawDataPlot(); drawLoss(); drawECG(); }
+
+buildStatic(); wire(); generate(); startTraining();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(redrawAll);
+})();
+</script>
+</body>
+</html>

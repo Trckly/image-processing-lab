@@ -1,0 +1,31 @@
+/* Design tokens: ECG chart-paper palette, light + dark. */
+:root{
+  --paper:#fbf7f5; --panel:#ffffff; --panel-2:#fdf8f6; --ink:#2a2324; --muted:#76696a; --line:#ecdfdb;
+  --grid:#f3e0db; --grid-strong:#e8c3b9;
+  --accent:#c2352b; --accent-2:#e2683c; --on-accent:#ffffff;
+  --c0:#2f8a5f; --c1:#d0602a; --c2:#3a6cc4;
+  --shadow:0 1px 2px rgb(60 20 20 / .05), 0 12px 32px -18px rgb(120 40 30 / .28);
+  --radius:14px;
+  --font-display:"Unbounded","IBM Plex Sans",system-ui,sans-serif;
+  --font-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#151112; --panel:#1f1a1b; --panel-2:#241e1f; --ink:#f1e9e7; --muted:#a8999a; --line:#352b2c;
+    --grid:#251d1e; --grid-strong:#3b2b2c;
+    --accent:#ff6b5e; --accent-2:#ff9a62; --on-accent:#1b1112;
+    --c0:#4fc08a; --c1:#ff8f5e; --c2:#7ea6f2;
+    --shadow:0 1px 2px rgb(0 0 0 / .4), 0 12px 32px -18px rgb(0 0 0 / .8);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#151112; --panel:#1f1a1b; --panel-2:#241e1f; --ink:#f1e9e7; --muted:#a8999a; --line:#352b2c;
+  --grid:#251d1e; --grid-strong:#3b2b2c;
+  --accent:#ff6b5e; --accent-2:#ff9a62; --on-accent:#1b1112;
+  --c0:#4fc08a; --c1:#ff8f5e; --c2:#7ea6f2;
+  --shadow:0 1px 2px rgb(0 0 0 / .4), 0 12px 32px -18px rgb(0 0 0 / .8);
+  color-scheme:dark;
+}
